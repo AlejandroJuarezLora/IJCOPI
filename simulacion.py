@@ -5,9 +5,33 @@ import nengo
 import segway; importlib.reload(segway)
 
 
+def compute_coeficients(ti, tf, qi, qf, dqi, dqf):
+    g = np.matrix([[qi], [qf], [dqi], [dqf]])
+    ti2 = ti * ti
+    ti3 = ti2 * ti
+    tf2 = tf * tf
+    tf3 = tf2 * tf
+    T = np.matrix([  [1, ti,     ti2,            ti3],
+                    [1, tf,     tf2,            tf3],
+                    [0,  1,     2 * ti,     3 * ti2],
+                    [0,  1,     2 * tf2,    3 * tf3]])
+    a = np.dot(np.linalg.inv(T),g)
+    return a
+
+tfin = 10
+qw_i = 4.
+qw_f = 6.
+dq_if = 0.
+
+qb_i = 0.1
+qb_f = 0.
+estado_inicial = np.array([qw_i,dq_if, qb_i, dq_if])  #condiciones iniciales q
+a_qw  = compute_coeficients(0,tfin, qw_i, qw_f, dq_if,dq_if)  #generando polinomio para trayectoria deseada de qw
+a_qb = compute_coeficients(0,tfin, qb_i, qb_f, dq_if,dq_if)  #generando polinomio para trayectoria deseada de qb
+
+
 def generate():
-    estado_inicial = np.array([4.,0., 0.1, 0.])  #condiciones iniciales q
-    estado_deseado = np.array([6., 0., 0., 0.])
+    
 
     segway_sim = segway.SegwayLink(dt = 1e-4)
     segway_sim.init_q = estado_inicial
@@ -20,9 +44,20 @@ def generate():
         #creando la referencia
         model.ref = nengo.Network('Referencia')
         with model.ref:
-            def PMC_func(t):
-                return estado_deseado
-            model.ref.output = nengo.Node(output = PMC_func, label = 'Referencia')
+            def path_desired(t):
+                if (t>tfin):
+                    t = tfin
+                t2 = t ** 2
+                t3 = t ** 3
+                t2 = t ** 2
+                pos = np.matrix([1,t,t2, t3])
+                vel = np.matrix([0,1,2 * t, 3 * t2])
+                qw_d = pos * a_qw
+                dqw_d = vel * a_qw
+                qb_d = pos * a_qb
+                dqb_d = vel * a_qb
+                return np.array([qw_d[0,0], dqw_d[0,0],  qb_d[0,0], dqb_d[0,0]])
+            model.ref.output = nengo.Node(output = path_desired, label = 'Referencia')
 
         model.error_q0 = nengo.Ensemble(100,1,radius = 3.1416,label = 'Error q0')
         model.error_dq0 = nengo.Ensemble(100,1,radius = 3.1416)
